@@ -395,12 +395,15 @@ class QRGenerator(QMainWindow):
         self.preview_frame.setObjectName("preview_box")
         self.preview_frame.setFixedSize(260, 260)
         preview_layout = QVBoxLayout(self.preview_frame)
-        preview_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(0)
 
         self.preview_label = QLabel("QR kód itt jelenik meg")
         self.preview_label.setObjectName("preview_placeholder")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setWordWrap(True)
+        self.preview_label.setScaledContents(True)
+        self.preview_label.setFixedSize(260, 260)
         preview_layout.addWidget(self.preview_label)
 
         right.addWidget(self.preview_frame)
