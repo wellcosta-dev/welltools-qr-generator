@@ -8,219 +8,401 @@
 """
 
 import sys
+import io
 import json
 from pathlib import Path
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit, QTabWidget, QFileDialog,
-    QSpinBox, QComboBox, QFrame, QStatusBar, QMessageBox,
-    QTextEdit, QColorDialog, QCheckBox
+    QPushButton, QLabel, QLineEdit, QFileDialog, QSpinBox, QComboBox,
+    QFrame, QStatusBar, QTextEdit, QColorDialog, QStackedWidget,
+    QButtonGroup
 )
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QPixmap, QImage, QColor
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QPixmap, QColor, QFont, QPainter, QBrush
+
 import qrcode
-from qrcode.image.pure import PyPNGImage
-import io
 
-# ── Stílus (konzisztens az image converter-rel) ──────────────────────────────
+# ── WELLCOSTA / WELLTOOLS Design System v1.0 — tokenek ────────────────────────
 
-DARK_STYLE = """
-QMainWindow, QWidget {
-    background-color: #0f0f11;
-    color: #e8e8ec;
-    font-family: 'Segoe UI', 'Inter', sans-serif;
+class C:
+    BG_CONTENT = "#26262a"
+    BG_PANEL = "#1e1e22"
+    BG_DEEP = "#1a1a1e"
+
+    ACCENT = "#06b6d4"
+    ACCENT_HOVER = "#0891b2"
+    ACCENT_ACTIVE = "#0e7490"
+
+    BORDER = "#333333"
+    BORDER_STRONG = "#444444"
+
+    TEXT_WHITE = "#ffffff"
+    TEXT_PRIMARY = "#e8e8ec"
+    TEXT_SECONDARY = "#aaaaaa"
+    TEXT_MUTED = "#666666"
+    TEXT_PLACEHOLDER = "#555555"
+    LABEL_MUTED = "#888888"
+
+    SUCCESS = "#06b6d4"
+    ERROR = "#e74c3c"
+    WARNING = "#f59e0b"
+
+
+SPACE = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 20, "2xl": 24, "3xl": 32}
+
+FONT_STACK = "'Inter', 'Segoe UI', Arial, sans-serif"
+
+QSS = f"""
+QMainWindow, #centralWidget {{
+    background-color: {C.BG_CONTENT};
+}}
+
+QWidget {{
+    font-family: {FONT_STACK};
     font-size: 13px;
-}
+    color: {C.TEXT_PRIMARY};
+}}
 
-QLabel#title {
-    font-size: 22px;
+/* Header sáv */
+QFrame#headerBar {{
+    background-color: {C.BG_PANEL};
+    border: none;
+    border-bottom: 1px solid {C.BORDER};
+    border-radius: 0px;
+}}
+QLabel#headerTitle {{
+    font-size: 15px;
     font-weight: 700;
-    color: #ffffff;
-    letter-spacing: -0.5px;
-}
-
-QLabel#subtitle {
-    font-size: 12px;
-    color: #6b6b7a;
-}
-
-QLabel#section {
+    color: {C.TEXT_WHITE};
+    background: transparent;
+}}
+QLabel#headerSubtitle {{
     font-size: 11px;
-    font-weight: 600;
-    color: #6b6b7a;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
+    font-weight: 400;
+    color: {C.TEXT_MUTED};
+    background: transparent;
+}}
 
-QLabel#preview_placeholder {
-    color: #2a2a3a;
-    font-size: 12px;
-}
-
-QFrame#preview_box {
-    background-color: #141418;
-    border: 1px solid #1e1e28;
-    border-radius: 12px;
-}
-
-QFrame#divider {
-    background-color: #1e1e28;
-    max-height: 1px;
-}
-
-QTabWidget::pane {
-    border: 1px solid #1e1e28;
-    border-radius: 8px;
-    background-color: #141418;
-    top: -1px;
-}
-
-QTabBar::tab {
-    background-color: #0f0f11;
-    color: #6b6b7a;
-    padding: 8px 20px;
-    border: 1px solid #1e1e28;
-    border-bottom: none;
-    border-radius: 6px 6px 0 0;
-    margin-right: 2px;
-    font-size: 12px;
-}
-
-QTabBar::tab:selected {
-    background-color: #141418;
-    color: #ffffff;
-    border-bottom: 1px solid #141418;
-}
-
-QTabBar::tab:hover:!selected {
-    color: #c8c8d4;
-    background-color: #141418;
-}
-
-QLineEdit, QTextEdit {
-    background-color: #1e1e28;
-    color: #e8e8ec;
-    border: 1px solid #2a2a35;
-    border-radius: 8px;
-    padding: 8px 12px;
-    selection-background-color: #4f46e5;
-}
-
-QLineEdit:focus, QTextEdit:focus {
-    border-color: #4f46e5;
-}
-
-QLineEdit:hover, QTextEdit:hover {
-    border-color: #3a3a4a;
-}
-
-QPushButton#primary {
-    background-color: #4f46e5;
-    color: #ffffff;
+/* Bal oldali nav */
+QPushButton#navItem {{
+    background-color: transparent;
     border: none;
-    border-radius: 8px;
-    padding: 10px 20px;
-    font-weight: 600;
-    font-size: 13px;
-}
-
-QPushButton#primary:hover {
-    background-color: #4338ca;
-}
-
-QPushButton#primary:pressed {
-    background-color: #3730a3;
-}
-
-QPushButton#primary:disabled {
-    background-color: #2a2a35;
-    color: #4a4a5a;
-}
-
-QPushButton#secondary {
-    background-color: #1e1e28;
-    color: #c8c8d4;
-    border: 1px solid #2a2a35;
-    border-radius: 8px;
+    border-left: 2px solid transparent;
     padding: 8px 16px;
-    font-size: 12px;
-}
+    font-size: 13px;
+    font-weight: 500;
+    color: {C.TEXT_SECONDARY};
+    text-align: left;
+    border-radius: 0px;
+}}
+QPushButton#navItem:hover {{
+    color: {C.TEXT_PRIMARY};
+}}
+QPushButton#navItem:checked {{
+    background-color: rgba(6, 182, 212, 0.1);
+    border-left: 2px solid {C.ACCENT};
+    color: {C.TEXT_WHITE};
+}}
 
-QPushButton#secondary:hover {
-    background-color: #252532;
-    color: #ffffff;
-}
-
-QPushButton#color_btn {
-    border-radius: 6px;
-    border: 1px solid #2a2a35;
-    min-width: 36px;
-    min-height: 36px;
-    max-width: 36px;
-    max-height: 36px;
-}
-
-QSpinBox, QComboBox {
-    background-color: #1e1e28;
-    color: #e8e8ec;
-    border: 1px solid #2a2a35;
-    border-radius: 8px;
-    padding: 8px 12px;
-    min-width: 80px;
-}
-
-QSpinBox:hover, QComboBox:hover {
-    border-color: #4f46e5;
-}
-
-QComboBox::drop-down {
-    border: none;
-    width: 24px;
-}
-
-QComboBox QAbstractItemView {
-    background-color: #1a1a24;
-    border: 1px solid #2a2a35;
-    border-radius: 8px;
-    selection-background-color: #2a2a3e;
-    color: #e8e8ec;
-}
-
-QCheckBox {
-    color: #c8c8d4;
-    spacing: 8px;
-}
-
-QCheckBox::indicator {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    border: 1.5px solid #2a2a35;
-    background-color: #1e1e28;
-}
-
-QCheckBox::indicator:checked {
-    background-color: #4f46e5;
-    border-color: #4f46e5;
-}
-
-QStatusBar {
-    background-color: #0a0a0d;
-    color: #6b6b7a;
+/* Label / section fejléc */
+QLabel#sectionLabel {{
     font-size: 11px;
-    border-top: 1px solid #1e1e28;
-}
+    font-weight: 600;
+    color: {C.LABEL_MUTED};
+    background: transparent;
+}}
+QLabel#inputLabel {{
+    font-size: 11px;
+    font-weight: 600;
+    color: {C.LABEL_MUTED};
+    background: transparent;
+}}
+
+/* Divider */
+QFrame#divider {{
+    background-color: {C.BORDER};
+    border: none;
+    max-height: 1px;
+    min-height: 1px;
+}}
+
+/* Panel / kártya */
+QFrame#panel {{
+    background-color: {C.BG_CONTENT};
+    border: 1px solid {C.BORDER};
+    border-radius: 0px;
+}}
+
+/* Input mező */
+QLineEdit, QTextEdit, QSpinBox, QComboBox {{
+    background-color: {C.BG_PANEL};
+    border: 1px solid {C.BORDER_STRONG};
+    border-radius: 0px;
+    color: {C.TEXT_PRIMARY};
+    font-size: 13px;
+    padding: 8px 12px;
+    selection-background-color: {C.ACCENT_ACTIVE};
+}}
+QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QComboBox:focus {{
+    border-color: {C.ACCENT};
+}}
+QLineEdit:disabled, QTextEdit:disabled {{
+    color: {C.TEXT_MUTED};
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 22px;
+}}
+QComboBox QAbstractItemView {{
+    background-color: {C.BG_PANEL};
+    border: 1px solid {C.BORDER_STRONG};
+    border-radius: 0px;
+    color: {C.TEXT_PRIMARY};
+    selection-background-color: rgba(6, 182, 212, 0.15);
+    selection-color: {C.TEXT_WHITE};
+    outline: none;
+}}
+QSpinBox::up-button, QSpinBox::down-button {{
+    background-color: {C.BG_PANEL};
+    border-left: 1px solid {C.BORDER_STRONG};
+    width: 16px;
+}}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+    background-color: {C.BORDER};
+}}
+
+/* Gomb — elsődleges */
+QPushButton#primary {{
+    background-color: {C.ACCENT};
+    color: #001a20;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 0px;
+}}
+QPushButton#primary:hover {{ background-color: {C.ACCENT_HOVER}; }}
+QPushButton#primary:pressed {{ background-color: {C.ACCENT_ACTIVE}; }}
+QPushButton#primary:disabled {{ background-color: {C.BORDER}; color: {C.TEXT_MUTED}; }}
+
+/* Gomb — másodlagos */
+QPushButton#secondary {{
+    background-color: {C.BORDER};
+    color: {C.TEXT_SECONDARY};
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 18px;
+    border: none;
+    border-radius: 0px;
+}}
+QPushButton#secondary:hover {{ background-color: #3f3f3f; color: {C.TEXT_PRIMARY}; }}
+QPushButton#secondary:disabled {{ background-color: #2a2a2a; color: {C.TEXT_MUTED}; }}
+
+QPushButton#colorSwatch {{
+    border: 1px solid {C.BORDER_STRONG};
+    border-radius: 0px;
+    min-width: 36px; max-width: 36px;
+    min-height: 32px; max-height: 32px;
+}}
+
+/* Badge / pill */
+QLabel#badgeActive {{
+    background-color: {C.ACCENT};
+    color: #001a20;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 0px;
+}}
+QLabel#badgeInactive {{
+    background-color: {C.BORDER};
+    color: {C.LABEL_MUTED};
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 0px;
+}}
+
+QLabel#previewPlaceholder {{
+    color: {C.TEXT_PLACEHOLDER};
+    font-size: 12px;
+    background: transparent;
+}}
+QFrame#previewBox {{
+    background-color: {C.BG_PANEL};
+    border: 1px solid {C.BORDER};
+    border-radius: 0px;
+}}
+
+QStatusBar {{
+    background-color: {C.BG_DEEP};
+    color: {C.TEXT_MUTED};
+    font-size: 11px;
+    border-top: 1px solid {C.BORDER};
+}}
+QStatusBar::item {{ border: none; }}
+
+/* Scrollbar */
+QScrollBar:vertical {{
+    background: {C.BG_DEEP};
+    width: 4px;
+    margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: {C.ACCENT};
+    border-radius: 0px;
+    min-height: 20px;
+}}
+QScrollBar::handle:vertical:hover {{ background: {C.ACCENT_HOVER}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+
+QScrollBar:horizontal {{
+    background: {C.BG_DEEP};
+    height: 4px;
+    margin: 0;
+}}
+QScrollBar::handle:horizontal {{
+    background: {C.ACCENT};
+    border-radius: 0px;
+    min-width: 20px;
+}}
+QScrollBar::handle:horizontal:hover {{ background: {C.ACCENT_HOVER}; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0px; }}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: none; }}
 """
+
+
+def set_letter_spacing(widget, px):
+    font = widget.font()
+    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, px)
+    widget.setFont(font)
+
+
+# ── Switch / toggle (design system komponens) ─────────────────────────────────
+
+class ToggleSwitch(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._checked = False
+        self._on_toggle = None
+        self.setFixedSize(36, 16)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def isChecked(self):
+        return self._checked
+
+    def setChecked(self, value: bool):
+        self._checked = bool(value)
+        self.update()
+
+    def connect(self, callback):
+        self._on_toggle = callback
+
+    def mousePressEvent(self, event):
+        self.setChecked(not self._checked)
+        if self._on_toggle:
+            self._on_toggle(self._checked)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        track_color = QColor(C.ACCENT if self._checked else C.BORDER_STRONG)
+        painter.setBrush(QBrush(track_color))
+        painter.drawRect(0, 0, 36, 16)
+
+        knob_x = 36 - 2 - 12 if self._checked else 2
+        painter.setBrush(QBrush(QColor(C.TEXT_WHITE)))
+        painter.drawRect(knob_x, 2, 12, 12)
+
+
+# ── Toast értesítés (design system komponens) ──────────────────────────────────
+
+class Toast(QFrame):
+    BORDER_COLORS = {"success": C.SUCCESS, "error": C.ERROR, "warning": C.WARNING}
+
+    def __init__(self, parent, kind, title, message):
+        super().__init__(parent)
+        border_color = self.BORDER_COLORS.get(kind, C.SUCCESS)
+        self.setObjectName("toast")
+        self.setStyleSheet(f"""
+            QFrame#toast {{
+                background-color: {C.BG_PANEL};
+                border: 1px solid {C.BORDER};
+                border-left: 3px solid {border_color};
+                border-radius: 0px;
+            }}
+        """)
+        self.setMinimumWidth(260)
+        self.setMaximumWidth(360)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(2)
+
+        title_label = QLabel(title.upper())
+        title_label.setStyleSheet(
+            f"font-size: 12px; font-weight: 700; color: {C.TEXT_WHITE}; "
+            f"background: transparent; border: none;"
+        )
+        set_letter_spacing(title_label, 0.5)
+        layout.addWidget(title_label)
+
+        message_label = QLabel(message)
+        message_label.setWordWrap(True)
+        message_label.setStyleSheet(
+            f"font-size: 12px; color: {C.LABEL_MUTED}; background: transparent; border: none;"
+        )
+        layout.addWidget(message_label)
+
+
+class ToastManager:
+    def __init__(self, host):
+        self.host = host
+        self.active = []
+
+    def show(self, kind, title, message, duration=3200):
+        toast = Toast(self.host, kind, title, message)
+        toast.adjustSize()
+        self.active.append(toast)
+        toast.show()
+        self._reposition()
+        QTimer.singleShot(duration, lambda: self._dismiss(toast))
+
+    def _dismiss(self, toast):
+        if toast not in self.active:
+            return
+        self.active.remove(toast)
+        toast.deleteLater()
+        self._reposition()
+
+    def _reposition(self):
+        margin = 16
+        y = margin
+        for toast in self.active:
+            toast.adjustSize()
+            x = self.host.width() - toast.width() - margin
+            toast.move(max(x, margin), y)
+            toast.raise_()
+            y += toast.height() + 8
+
+    def reflow(self):
+        self._reposition()
+
 
 # ── Perzisztencia ────────────────────────────────────────────────────────────
 
 CONFIG_PATH = Path.home() / ".wellcosta" / "qr_generator.json"
 
+
 def load_config():
     try:
         if CONFIG_PATH.exists():
             return json.loads(CONFIG_PATH.read_text())
-    except:
+    except Exception:
         pass
     return {
         "last_tab": 0,
@@ -236,12 +418,14 @@ def load_config():
         "last_wifi_security": "WPA",
     }
 
+
 def save_config(cfg):
     try:
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-    except:
+    except Exception:
         pass
+
 
 # ── Főablak ──────────────────────────────────────────────────────────────────
 
@@ -254,205 +438,281 @@ class QRGenerator(QMainWindow):
         self.bg_color = self.cfg.get("bg_color", "#ffffff")
 
         self.setWindowTitle("QR Generator — wellcosta-dev")
-        self.setMinimumSize(820, 580)
-        self.resize(920, 640)
-        self.setStyleSheet(DARK_STYLE)
+        self.setMinimumSize(1000, 640)
+        self.resize(1080, 700)
 
         self._build_ui()
         self._restore_state()
 
+    # ── Segédfüggvények ─────────────────────────────────────────────────────
+
+    def _label(self, text, object_name, upper=False, spacing=None):
+        lbl = QLabel(text.upper() if upper else text)
+        lbl.setObjectName(object_name)
+        if spacing:
+            set_letter_spacing(lbl, spacing)
+        return lbl
+
+    def _divider(self):
+        d = QFrame()
+        d.setObjectName("divider")
+        d.setFrameShape(QFrame.Shape.HLine)
+        return d
+
+    def _field(self, label_text, widget):
+        box = QVBoxLayout()
+        box.setSpacing(6)
+        box.addWidget(self._label(label_text, "inputLabel", upper=True, spacing=0.5))
+        box.addWidget(widget)
+        return box
+
+    # ── UI felépítés ─────────────────────────────────────────────────────────
+
     def _build_ui(self):
         central = QWidget()
+        central.setObjectName("centralWidget")
         self.setCentralWidget(central)
-        main = QVBoxLayout(central)
-        main.setContentsMargins(24, 24, 24, 16)
-        main.setSpacing(16)
 
-        # ── Header
-        header = QHBoxLayout()
-        title_block = QVBoxLayout()
-        title_block.setSpacing(2)
-        title = QLabel("QR Generator")
-        title.setObjectName("title")
-        subtitle = QLabel("wellcosta-dev · URL · Szöveg · vCard · WiFi")
-        subtitle.setObjectName("subtitle")
-        title_block.addWidget(title)
-        title_block.addWidget(subtitle)
-        header.addLayout(title_block)
-        header.addStretch()
-        version = QLabel("v1.0")
-        version.setStyleSheet("color: #2a2a3a; font-size: 11px;")
-        header.addWidget(version)
-        main.addLayout(header)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        div = QFrame()
-        div.setObjectName("divider")
-        div.setFrameShape(QFrame.Shape.HLine)
-        main.addWidget(div)
+        # Nézetek előbb, mert a nav rájuk hivatkozik
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self._build_url_page())
+        self.stack.addWidget(self._build_text_page())
+        self.stack.addWidget(self._build_vcard_page())
+        self.stack.addWidget(self._build_wifi_page())
 
-        # ── Tartalom
-        content = QHBoxLayout()
-        content.setSpacing(20)
+        root.addWidget(self._build_header())
 
-        # ── Bal oldal: input tabek
-        left = QVBoxLayout()
-        left.setSpacing(12)
+        body = QWidget()
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(24, 20, 24, 16)
+        body_layout.setSpacing(SPACE["xl"])
 
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self._build_url_tab(), "🔗  URL")
-        self.tabs.addTab(self._build_text_tab(), "📝  Szöveg")
-        self.tabs.addTab(self._build_vcard_tab(), "👤  vCard")
-        self.tabs.addTab(self._build_wifi_tab(), "📶  WiFi")
-        self.tabs.currentChanged.connect(self._on_tab_changed)
+        body_layout.addWidget(self._build_nav())
+        body_layout.addWidget(self._build_form_panel(), 1)
+        body_layout.addWidget(self._build_preview_panel())
 
-        left.addWidget(self.tabs)
-
-        # Beállítások
-        settings_label = QLabel("BEÁLLÍTÁSOK")
-        settings_label.setObjectName("section")
-        left.addWidget(settings_label)
-
-        settings_row = QHBoxLayout()
-        settings_row.setSpacing(12)
-
-        # Méret
-        size_col = QVBoxLayout()
-        size_col.setSpacing(4)
-        size_col.addWidget(QLabel("Méret"))
-        self.size_spin = QSpinBox()
-        self.size_spin.setRange(1, 40)
-        self.size_spin.setValue(self.cfg.get("qr_size", 10))
-        self.size_spin.setToolTip("QR kód cellák mérete (1-40)")
-        size_col.addWidget(self.size_spin)
-        settings_row.addLayout(size_col)
-
-        # Keret
-        border_col = QVBoxLayout()
-        border_col.setSpacing(4)
-        border_col.addWidget(QLabel("Keret"))
-        self.border_spin = QSpinBox()
-        self.border_spin.setRange(0, 20)
-        self.border_spin.setValue(self.cfg.get("qr_border", 4))
-        border_col.addWidget(self.border_spin)
-        settings_row.addLayout(border_col)
-
-        # Formátum
-        fmt_col = QVBoxLayout()
-        fmt_col.setSpacing(4)
-        fmt_col.addWidget(QLabel("Formátum"))
-        self.fmt_combo = QComboBox()
-        self.fmt_combo.addItems(["PNG", "SVG", "JPG"])
-        self.fmt_combo.setCurrentText(self.cfg.get("qr_format", "PNG"))
-        fmt_col.addWidget(self.fmt_combo)
-        settings_row.addLayout(fmt_col)
-
-        # Előtér szín
-        fg_col = QVBoxLayout()
-        fg_col.setSpacing(4)
-        fg_col.addWidget(QLabel("QR szín"))
-        self.fg_btn = QPushButton()
-        self.fg_btn.setObjectName("color_btn")
-        self.fg_btn.setToolTip("QR kód színe")
-        self._set_btn_color(self.fg_btn, self.fg_color)
-        self.fg_btn.clicked.connect(lambda: self._pick_color("fg"))
-        fg_col.addWidget(self.fg_btn)
-        settings_row.addLayout(fg_col)
-
-        # Háttér szín
-        bg_col = QVBoxLayout()
-        bg_col.setSpacing(4)
-        bg_col.addWidget(QLabel("Háttér"))
-        self.bg_btn = QPushButton()
-        self.bg_btn.setObjectName("color_btn")
-        self.bg_btn.setToolTip("Háttér színe")
-        self._set_btn_color(self.bg_btn, self.bg_color)
-        self.bg_btn.clicked.connect(lambda: self._pick_color("bg"))
-        bg_col.addWidget(self.bg_btn)
-        settings_row.addLayout(bg_col)
-
-        settings_row.addStretch()
-        left.addLayout(settings_row)
-
-        # Generálás gomb
-        self.btn_generate = QPushButton("QR kód generálása")
-        self.btn_generate.setObjectName("primary")
-        self.btn_generate.setFixedHeight(42)
-        self.btn_generate.clicked.connect(self.generate_qr)
-        left.addWidget(self.btn_generate)
-
-        content.addLayout(left, 3)
-
-        # ── Jobb oldal: preview
-        right = QVBoxLayout()
-        right.setSpacing(12)
-        right.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        preview_label = QLabel("ELŐNÉZET")
-        preview_label.setObjectName("section")
-        right.addWidget(preview_label)
-
-        self.preview_frame = QFrame()
-        self.preview_frame.setObjectName("preview_box")
-        self.preview_frame.setFixedSize(260, 260)
-        preview_layout = QVBoxLayout(self.preview_frame)
-        preview_layout.setContentsMargins(0, 0, 0, 0)
-        preview_layout.setSpacing(0)
-
-        self.preview_label = QLabel("QR kód itt jelenik meg")
-        self.preview_label.setObjectName("preview_placeholder")
-        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_label.setWordWrap(True)
-        self.preview_label.setScaledContents(True)
-        self.preview_label.setFixedSize(260, 260)
-        preview_layout.addWidget(self.preview_label)
-
-        right.addWidget(self.preview_frame)
-        right.addStretch()
-
-        # Mentés gomb
-        self.btn_save = QPushButton("Mentés…")
-        self.btn_save.setObjectName("secondary")
-        self.btn_save.setEnabled(False)
-        self.btn_save.clicked.connect(self.save_qr)
-        right.addWidget(self.btn_save)
-
-        content.addLayout(right, 1)
-        main.addLayout(content)
+        root.addWidget(body, 1)
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self.status.showMessage("Kész · wellcosta-dev")
 
-    # ── Tab építők ───────────────────────────────────────────────────────────
+        self.toasts = ToastManager(central)
 
-    def _build_url_tab(self):
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-        layout.addWidget(QLabel("URL cím"))
+    def _build_header(self):
+        bar = QFrame()
+        bar.setObjectName("headerBar")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setSpacing(SPACE["sm"])
+
+        title_block = QVBoxLayout()
+        title_block.setSpacing(2)
+        title_block.addWidget(self._label("QR Generátor", "headerTitle", upper=True, spacing=1.0))
+        subtitle = QLabel("wellcosta-dev · Kostyál Árpád")
+        subtitle.setObjectName("headerSubtitle")
+        title_block.addWidget(subtitle)
+
+        layout.addLayout(title_block)
+        layout.addStretch()
+        layout.addWidget(self._label("v1.0", "badgeInactive", upper=True, spacing=0.5))
+
+        return bar
+
+    def _build_nav(self):
+        container = QWidget()
+        container.setFixedWidth(168)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        nav_items = [("🔗", "URL"), ("📝", "Szöveg"), ("👤", "vCard"), ("📶", "WiFi")]
+
+        self.nav_group = QButtonGroup(self)
+        self.nav_group.setExclusive(True)
+        self.nav_buttons = []
+
+        for i, (icon, text) in enumerate(nav_items):
+            btn = QPushButton(f"{icon}  {text}".upper())
+            btn.setObjectName("navItem")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.nav_group.addButton(btn, i)
+            self.nav_buttons.append(btn)
+            layout.addWidget(btn)
+
+        self.nav_buttons[0].setChecked(True)
+        self.nav_group.idToggled.connect(self._on_nav_toggled)
+
+        layout.addStretch()
+        return container
+
+    def _on_nav_toggled(self, index, checked):
+        if checked:
+            self.stack.setCurrentIndex(index)
+            self.cfg["last_tab"] = index
+
+    def _build_form_panel(self):
+        panel = QFrame()
+        panel.setObjectName("panel")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(SPACE["md"])
+
+        layout.addWidget(self.stack, 1)
+        layout.addWidget(self._divider())
+        layout.addLayout(self._build_settings())
+        layout.addWidget(self._divider())
+
+        self.btn_generate = QPushButton("QR kód generálása".upper())
+        self.btn_generate.setObjectName("primary")
+        self.btn_generate.setFixedHeight(40)
+        self.btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_generate.clicked.connect(self.generate_qr)
+        layout.addWidget(self.btn_generate)
+
+        return panel
+
+    def _build_settings(self):
+        box = QVBoxLayout()
+        box.setSpacing(SPACE["sm"])
+        box.addWidget(self._label("Beállítások", "sectionLabel", upper=True, spacing=0.5))
+
+        row = QHBoxLayout()
+        row.setSpacing(SPACE["md"])
+
+        size_col = QVBoxLayout()
+        size_col.setSpacing(6)
+        size_col.addWidget(self._label("Méret", "inputLabel", upper=True, spacing=0.5))
+        self.size_spin = QSpinBox()
+        self.size_spin.setRange(1, 40)
+        self.size_spin.setValue(self.cfg.get("qr_size", 10))
+        self.size_spin.setToolTip("QR kód cellák mérete (1-40)")
+        size_col.addWidget(self.size_spin)
+        row.addLayout(size_col)
+
+        border_col = QVBoxLayout()
+        border_col.setSpacing(6)
+        border_col.addWidget(self._label("Keret", "inputLabel", upper=True, spacing=0.5))
+        self.border_spin = QSpinBox()
+        self.border_spin.setRange(0, 20)
+        self.border_spin.setValue(self.cfg.get("qr_border", 4))
+        border_col.addWidget(self.border_spin)
+        row.addLayout(border_col)
+
+        fmt_col = QVBoxLayout()
+        fmt_col.setSpacing(6)
+        fmt_col.addWidget(self._label("Formátum", "inputLabel", upper=True, spacing=0.5))
+        self.fmt_combo = QComboBox()
+        self.fmt_combo.addItems(["PNG", "SVG", "JPG"])
+        self.fmt_combo.setCurrentText(self.cfg.get("qr_format", "PNG"))
+        fmt_col.addWidget(self.fmt_combo)
+        row.addLayout(fmt_col)
+
+        fg_col = QVBoxLayout()
+        fg_col.setSpacing(6)
+        fg_col.addWidget(self._label("QR szín", "inputLabel", upper=True, spacing=0.5))
+        self.fg_btn = QPushButton()
+        self.fg_btn.setObjectName("colorSwatch")
+        self.fg_btn.setToolTip("QR kód színe")
+        self.fg_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._set_btn_color(self.fg_btn, self.fg_color)
+        self.fg_btn.clicked.connect(lambda: self._pick_color("fg"))
+        fg_col.addWidget(self.fg_btn)
+        row.addLayout(fg_col)
+
+        bg_col = QVBoxLayout()
+        bg_col.setSpacing(6)
+        bg_col.addWidget(self._label("Háttér", "inputLabel", upper=True, spacing=0.5))
+        self.bg_btn = QPushButton()
+        self.bg_btn.setObjectName("colorSwatch")
+        self.bg_btn.setToolTip("Háttér színe")
+        self.bg_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._set_btn_color(self.bg_btn, self.bg_color)
+        self.bg_btn.clicked.connect(lambda: self._pick_color("bg"))
+        bg_col.addWidget(self.bg_btn)
+        row.addLayout(bg_col)
+
+        row.addStretch()
+        box.addLayout(row)
+        return box
+
+    def _build_preview_panel(self):
+        panel = QFrame()
+        panel.setObjectName("panel")
+        panel.setFixedWidth(260)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(SPACE["md"])
+
+        header_row = QHBoxLayout()
+        header_row.addWidget(self._label("Előnézet", "sectionLabel", upper=True, spacing=0.5))
+        header_row.addStretch()
+        self.status_badge = self._label("Nincs adat", "badgeInactive", upper=True, spacing=0.5)
+        header_row.addWidget(self.status_badge)
+        layout.addLayout(header_row)
+
+        self.preview_frame = QFrame()
+        self.preview_frame.setObjectName("previewBox")
+        self.preview_frame.setFixedSize(220, 220)
+        pv_layout = QVBoxLayout(self.preview_frame)
+        pv_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.preview_label = QLabel("QR kód itt jelenik meg")
+        self.preview_label.setObjectName("previewPlaceholder")
+        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_label.setWordWrap(True)
+        self.preview_label.setFixedSize(220, 220)
+        self.preview_label.setScaledContents(True)
+        pv_layout.addWidget(self.preview_label)
+
+        layout.addWidget(self.preview_frame, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch()
+
+        self.btn_save = QPushButton("Mentés…".upper())
+        self.btn_save.setObjectName("secondary")
+        self.btn_save.setEnabled(False)
+        self.btn_save.setFixedHeight(36)
+        self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save.clicked.connect(self.save_qr)
+        layout.addWidget(self.btn_save)
+
+        return panel
+
+    # ── Nézet oldalak ────────────────────────────────────────────────────────
+
+    def _build_url_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE["sm"])
+
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("https://wellcosta.dev")
-        layout.addWidget(self.url_input)
+        layout.addLayout(self._field("URL cím", self.url_input))
         layout.addStretch()
-        return w
+        return page
 
-    def _build_text_tab(self):
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-        layout.addWidget(QLabel("Szöveg"))
+    def _build_text_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE["sm"])
+
         self.text_input = QTextEdit()
         self.text_input.setPlaceholderText("Írja be a szöveget...")
-        layout.addWidget(self.text_input)
-        return w
+        layout.addLayout(self._field("Szöveg", self.text_input))
+        return page
 
-    def _build_vcard_tab(self):
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(6)
+    def _build_vcard_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE["sm"])
 
         fields = [
             ("Teljes név", "vcard_name", "Kostyál Árpád"),
@@ -463,52 +723,56 @@ class QRGenerator(QMainWindow):
             ("Cím", "vcard_address", "Nyíregyháza, Magyarország"),
         ]
 
-        for label, attr, placeholder in fields:
-            layout.addWidget(QLabel(label))
+        for label_text, attr, placeholder in fields:
             field = QLineEdit()
             field.setPlaceholderText(placeholder)
             setattr(self, attr, field)
-            layout.addWidget(field)
+            layout.addLayout(self._field(label_text, field))
 
         layout.addStretch()
-        return w
+        return page
 
-    def _build_wifi_tab(self):
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+    def _build_wifi_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE["sm"])
 
-        layout.addWidget(QLabel("Hálózat neve (SSID)"))
         self.wifi_ssid = QLineEdit()
         self.wifi_ssid.setPlaceholderText("OtthoniWifi")
-        layout.addWidget(self.wifi_ssid)
+        layout.addLayout(self._field("Hálózat neve (SSID)", self.wifi_ssid))
 
-        layout.addWidget(QLabel("Jelszó"))
         self.wifi_password = QLineEdit()
         self.wifi_password.setPlaceholderText("jelszó")
         self.wifi_password.setEchoMode(QLineEdit.EchoMode.Password)
-        layout.addWidget(self.wifi_password)
+        layout.addLayout(self._field("Jelszó", self.wifi_password))
 
-        show_pw = QCheckBox("Jelszó megjelenítése")
-        show_pw.toggled.connect(lambda checked: self.wifi_password.setEchoMode(
+        show_row = QHBoxLayout()
+        show_row.setSpacing(SPACE["sm"])
+        self.show_pw_switch = ToggleSwitch()
+        self.show_pw_switch.connect(lambda checked: self.wifi_password.setEchoMode(
             QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         ))
-        layout.addWidget(show_pw)
+        show_row.addWidget(self.show_pw_switch)
+        show_label = QLabel("Jelszó megjelenítése")
+        show_label.setStyleSheet(f"color: {C.TEXT_SECONDARY}; font-size: 13px; background: transparent;")
+        show_row.addWidget(show_label)
+        show_row.addStretch()
+        layout.addLayout(show_row)
 
-        layout.addWidget(QLabel("Titkosítás"))
+        layout.addWidget(self._label("Titkosítás", "inputLabel", upper=True, spacing=0.5))
         self.wifi_security = QComboBox()
         self.wifi_security.addItems(["WPA", "WEP", "Nincs"])
         self.wifi_security.setCurrentText(self.cfg.get("last_wifi_security", "WPA"))
         layout.addWidget(self.wifi_security)
 
         layout.addStretch()
-        return w
+        return page
 
     # ── Logika ───────────────────────────────────────────────────────────────
 
     def _build_qr_data(self):
-        tab = self.tabs.currentIndex()
+        tab = self.stack.currentIndex()
 
         if tab == 0:  # URL
             data = self.url_input.text().strip()
@@ -559,7 +823,7 @@ class QRGenerator(QMainWindow):
         try:
             data = self._build_qr_data()
         except ValueError as e:
-            self.status.showMessage(f"⚠ {e}")
+            self.toasts.show("warning", "Hiányzó adat", str(e))
             return
 
         try:
@@ -577,28 +841,29 @@ class QRGenerator(QMainWindow):
                 back_color=self.bg_color
             ).convert("RGB")
 
-            # PIL image → QPixmap
             buffer = io.BytesIO()
             img.save(buffer, format="PNG")
             buffer.seek(0)
-            raw = buffer.getvalue()
 
             pixmap = QPixmap()
-            pixmap.loadFromData(raw)
+            pixmap.loadFromData(buffer.getvalue())
 
             self.current_qr_image = img
             self.preview_label.setText("")
             self.preview_label.setPixmap(
-                pixmap.scaled(240, 240, Qt.AspectRatioMode.KeepAspectRatio,
+                pixmap.scaled(220, 220, Qt.AspectRatioMode.KeepAspectRatio,
                               Qt.TransformationMode.SmoothTransformation)
             )
             self.btn_save.setEnabled(True)
-            self.status.showMessage("✓ QR kód generálva")
+            self._set_status_badge(True)
+            self.status.showMessage("Kész · QR kód generálva")
+            self.toasts.show("success", "QR kód generálva", "A kód elkészült, mentheted a gombbal.")
             self._save_state()
 
         except Exception as e:
-            self.status.showMessage(f"✗ Hiba: {e}")
-            QMessageBox.critical(self, "Hiba", str(e))
+            self._set_status_badge(False)
+            self.status.showMessage("Hiba történt")
+            self.toasts.show("error", "Generálási hiba", str(e))
 
     def save_qr(self):
         if not self.current_qr_image:
@@ -637,11 +902,12 @@ class QRGenerator(QMainWindow):
 
             self.cfg["last_output_dir"] = str(Path(path).parent)
             save_config(self.cfg)
-            self.status.showMessage(f"✓ Mentve: {path}")
+            self.status.showMessage(f"Mentve: {path}")
+            self.toasts.show("success", "Mentés kész", f"Fájl elmentve: {Path(path).name}")
 
         except Exception as e:
-            self.status.showMessage(f"✗ Mentési hiba: {e}")
-            QMessageBox.critical(self, "Mentési hiba", str(e))
+            self.status.showMessage("Mentési hiba")
+            self.toasts.show("error", "Mentési hiba", str(e))
 
     def _pick_color(self, which):
         current = QColor(self.fg_color if which == "fg" else self.bg_color)
@@ -657,16 +923,20 @@ class QRGenerator(QMainWindow):
 
     def _set_btn_color(self, btn, hex_color):
         btn.setStyleSheet(
-            f"QPushButton {{ background-color: {hex_color}; border-radius: 6px; "
-            f"border: 1px solid #2a2a35; min-width: 36px; min-height: 36px; "
-            f"max-width: 36px; max-height: 36px; }}"
+            f"QPushButton#colorSwatch {{ background-color: {hex_color}; "
+            f"border: 1px solid {C.BORDER_STRONG}; border-radius: 0px; }}"
         )
 
-    def _on_tab_changed(self, index):
-        self.cfg["last_tab"] = index
+    def _set_status_badge(self, ready: bool):
+        self.status_badge.setText(("Kész" if ready else "Nincs adat").upper())
+        self.status_badge.setObjectName("badgeActive" if ready else "badgeInactive")
+        self.status_badge.style().unpolish(self.status_badge)
+        self.status_badge.style().polish(self.status_badge)
 
     def _restore_state(self):
-        self.tabs.setCurrentIndex(self.cfg.get("last_tab", 0))
+        idx = self.cfg.get("last_tab", 0)
+        if 0 <= idx < len(self.nav_buttons):
+            self.nav_buttons[idx].setChecked(True)
         self.url_input.setText(self.cfg.get("last_url", ""))
         self.text_input.setPlainText(self.cfg.get("last_text", ""))
         self.wifi_ssid.setText(self.cfg.get("last_wifi_ssid", ""))
@@ -674,7 +944,7 @@ class QRGenerator(QMainWindow):
 
     def _save_state(self):
         self.cfg.update({
-            "last_tab": self.tabs.currentIndex(),
+            "last_tab": self.stack.currentIndex(),
             "last_url": self.url_input.text(),
             "last_text": self.text_input.toPlainText(),
             "last_wifi_ssid": self.wifi_ssid.text(),
@@ -687,6 +957,11 @@ class QRGenerator(QMainWindow):
         })
         save_config(self.cfg)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "toasts"):
+            self.toasts.reflow()
+
     def closeEvent(self, event):
         self._save_state()
         super().closeEvent(event)
@@ -698,6 +973,14 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName("QR Generator")
     app.setOrganizationName("wellcosta-dev")
+
+    base_font = QFont()
+    base_font.setFamilies(["Inter", "Segoe UI", "Arial"])
+    base_font.setPointSize(9)
+    app.setFont(base_font)
+
+    app.setStyleSheet(QSS)
+
     window = QRGenerator()
     window.show()
     sys.exit(app.exec())
